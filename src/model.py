@@ -1,6 +1,6 @@
 import dataclasses
 import functools
-from typing import Callable, Literal, TypeAlias, Self
+from typing import Literal, TypeAlias, Self
 
 import einops
 import flax.nnx as nnx
@@ -162,24 +162,15 @@ class FlowPolicy(nnx.Module):
         rng: jax.Array,
         obs: jax.Array,
         num_steps: int,
-        _profile_callback: Callable[[int, str], None] | None = None,
     ) -> jax.Array:
         dt = 1 / num_steps
         noise = jax.random.normal(rng, shape=(obs.shape[0], self.action_chunk_size, self.action_dim))
-        if _profile_callback is not None:
-            jax.debug.callback(_profile_callback, jnp.int32(-1), "prepare_done")
 
         def step(carry, step_idx):
             x_t, time = carry
-            if _profile_callback is not None:
-                jax.debug.callback(_profile_callback, step_idx, "step_start")
             v_t = self(obs, x_t, time)
-            if _profile_callback is not None:
-                jax.debug.callback(_profile_callback, step_idx, "forward_done")
             next_x = x_t + dt * v_t
             next_time = time + dt
-            if _profile_callback is not None:
-                jax.debug.callback(_profile_callback, step_idx, "decode_done")
             return (next_x, next_time), None
 
         (x_1, _), _ = jax.lax.scan(step, (noise, 0.0), jnp.arange(num_steps))
@@ -242,17 +233,12 @@ class FlowPolicy(nnx.Module):
         prefix_attention_horizon: int,
         prefix_attention_schedule: PrefixAttentionSchedule,
         max_guidance_weight: float,
-        _profile_callback: Callable[[int, str], None] | None = None,
     ) -> jax.Array:
         dt = 1 / num_steps
         noise = jax.random.normal(rng, shape=(obs.shape[0], self.action_chunk_size, self.action_dim))
-        if _profile_callback is not None:
-            jax.debug.callback(_profile_callback, jnp.int32(-1), "prepare_done")
 
         def step(carry, step_idx):
             x_t, time = carry
-            if _profile_callback is not None:
-                jax.debug.callback(_profile_callback, step_idx, "step_start")
 
             @functools.partial(jax.vmap, in_axes=(0, 0, 0, None))  # over batch
             def pinv_corrected_velocity(obs, x_t, y, t):
@@ -266,7 +252,6 @@ class FlowPolicy(nnx.Module):
                 )
                 error = (y - x_1) * weights[:, None]
                 pinv_correction = vjp_fun(error)[0]
-                # constants from paper
                 inv_r2 = (t**2 + (1 - t) ** 2) / ((1 - t) ** 2)
                 c = jnp.nan_to_num((1 - t) / t, posinf=max_guidance_weight)
                 guidance_weight = jnp.minimum(c * inv_r2, max_guidance_weight)
@@ -279,12 +264,8 @@ class FlowPolicy(nnx.Module):
                 v_t = self(obs, x_t, time_chunk)
             else:
                 v_t = pinv_corrected_velocity(obs, x_t, prev_action_chunk, time)
-            if _profile_callback is not None:
-                jax.debug.callback(_profile_callback, step_idx, "forward_done")
             next_x = x_t + dt * v_t
             next_time = time + dt
-            if _profile_callback is not None:
-                jax.debug.callback(_profile_callback, step_idx, "decode_done")
             return (next_x, next_time), None
 
         (x_1, _), _ = jax.lax.scan(step, (noise, 0.0), jnp.arange(num_steps))
