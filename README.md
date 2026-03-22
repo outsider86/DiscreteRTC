@@ -34,13 +34,3 @@ All outputs are stored under `paper/`:
 
 6. Evaluate continuous flow baselines: `uv run src/eval_flow.py --run-path <path-to-bc-checkpoints>`
     - Results are written to `paper/stats/results.csv`.
-
-## Visualization
-
-Generate comparison plots (continuous vs discrete):
-```bash
-uv run visualization/plot_comparison_grid.py \
-    --continuous-csv paper/stats/continuous_results.csv \
-    --discrete-csv paper/stats/discrete_results.csv \
-    --output paper/comparison.png
-```

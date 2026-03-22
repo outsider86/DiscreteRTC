@@ -231,3 +231,7 @@ logs-dd-self-forcing/
 
 visualization/
 docs/
+src/eval_vlash_dd.py
+src/train_vlash_dd.py
+src/compute_robot_indices.py
+src/finetune_dd_self_forcing.py
