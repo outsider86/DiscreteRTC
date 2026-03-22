@@ -220,8 +220,7 @@ rtc-assets/
 train_logs/
 eval_logs/
 eval_output/
-train_logs_paper/
-eval_logs_paper/
+paper/
 # Training and evaluation logs
 logs-dd/
 logs-expert/

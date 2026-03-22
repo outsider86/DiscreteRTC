@@ -186,7 +186,7 @@ def main(
         "worlds/l/car_launch.json",
     ),
     seed: int = 0,
-    output_dir: str | None = "eval_logs_paper/stats",
+    output_dir: str | None = "paper/stats",
 ):
     static_env_params = kenv_state.StaticEnvParams(**train_expert.LARGE_ENV_PARAMS, frame_skip=train_expert.FRAME_SKIP)
     env_params = kenv_state.EnvParams()

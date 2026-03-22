@@ -498,7 +498,7 @@ def main(
         "worlds/l/car_launch.json",
     ),
     seed: int = 0,
-    output_dir: str | None = "eval_logs_paper/stats",
+    output_dir: str | None = "paper/stats",
     num_gpus: int = 0,
 ):
     """Run evaluation. Use num_gpus > 1 to distribute levels across GPUs via separate processes (avoids NCCL)."""

@@ -25,7 +25,7 @@ import model as _model
 import train_expert
 
 WANDB_PROJECT = "rtc-kinetix-bc"
-LOG_DIR = pathlib.Path("train_logs_paper")
+LOG_DIR = pathlib.Path("paper/checkpoints")
 
 
 @dataclasses.dataclass(frozen=True)

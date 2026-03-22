@@ -17,36 +17,38 @@ For steps 1-3 (training experts, generating data, and training continuous flow m
 
 Note that, for all scripts, your number of GPUs must divide the number of levels (default 12) because computation is sharded over levels.
 
-All training checkpoints are saved to `train_logs_paper/` and all evaluation results to `eval_logs_paper/`.
+All outputs are stored under `paper/`:
+- `paper/checkpoints/` — trained model checkpoints
+- `paper/stats/` — evaluation result CSVs
 
 ### Discrete diffusion policy training
 
-4. Train discrete diffusion policies: `uv run src/train_dd.py --run-path <path-to-expert-data>`
+4. Train discrete diffusion policies: `uv run src/train_dd.py --config.run-path <path-to-expert-data>`
     - This loads the expert data from step 2 and trains discrete diffusion (MaskGIT-style) policies for each level.
-    - Checkpoints are written to `train_logs_paper/<wandb-run-name>`.
+    - Checkpoints are written to `paper/checkpoints/<wandb-run-name>`.
 
 ### Evaluation
 
-5. Evaluate discrete diffusion policies: `uv run src/eval_dd.py --run-path train_logs_paper/<wandb-run-name>`
+5. Evaluate discrete diffusion policies: `uv run src/eval_dd.py --run-path paper/checkpoints/<wandb-run-name>`
     - This sweeps over inference delays (0-4) and evaluates all methods (naive, discrete RTC, adaptive discrete RTC, BID, VLASH) with 2048 trials per level.
-    - Results are written to `eval_logs_paper/results.csv`.
+    - Results are written to `paper/stats/results.csv`.
     - Use `--num-gpus N` to distribute levels across GPUs via separate processes.
 
 6. Evaluate continuous flow baselines: `uv run src/eval_flow.py --run-path <path-to-bc-checkpoints>`
-    - Results are written to `eval_logs_paper/results.csv`.
+    - Results are written to `paper/stats/results.csv`.
 
 ### Optional: fine-tuning and VLASH training
 
-- Fine-tune with inpainting mask: `uv run src/finetune_dd.py --run-path <path-to-expert-data> --load-dir train_logs_paper/<wandb-run-name>/<epoch>`
-- Self-forcing fine-tuning: `uv run src/finetune_dd_self_forcing.py --run-path <path-to-expert-data> --load-dir train_logs_paper/<wandb-run-name>/<epoch>`
-- VLASH training: `uv run src/train_vlash_dd.py --run-path <path-to-expert-data>`
+- Fine-tune with inpainting mask: `uv run src/finetune_dd.py --config.run-path <path-to-expert-data> --config.load-dir paper/checkpoints/<wandb-run-name>/<epoch>`
+- Self-forcing fine-tuning: `uv run src/finetune_dd_self_forcing.py --config.run-path <path-to-expert-data> --config.load-dir paper/checkpoints/<wandb-run-name>/<epoch>`
+- VLASH training: `uv run src/train_vlash_dd.py --config.run-path <path-to-expert-data>`
 
 ## Visualization
 
 Generate comparison plots (continuous vs discrete):
 ```bash
 uv run visualization/plot_comparison_grid.py \
-    --continuous-csv eval_logs_paper/continuous_results.csv \
-    --discrete-csv eval_logs_paper/discrete_results.csv \
-    --output eval_logs_paper/comparison.png
+    --continuous-csv paper/stats/continuous_results.csv \
+    --discrete-csv paper/stats/discrete_results.csv \
+    --output paper/comparison.png
 ```
