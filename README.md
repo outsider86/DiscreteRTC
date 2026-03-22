@@ -1,5 +1,3 @@
-Simulated experiments for discrete diffusion real-time chunking in Kinetix, extending the work from [Real-Time Execution of Action Chunking Flow Policies](https://arxiv.org/abs/2506.07339) and [Training-Time Action Conditioning for Efficient Real-Time Chunking](https://arxiv.org/abs/2512.05964).
-
 ## Installation
 
 ```bash
@@ -7,8 +5,8 @@ Simulated experiments for discrete diffusion real-time chunking in Kinetix, exte
 git submodule update --init
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-# Install dependencies (Python 3.12 recommended - dm-tree wheels unavailable for 3.13)
-uv sync --python 3.12
+# Install dependencies
+uv sync --python
 ```
 
 ## Reproduce results
@@ -36,12 +34,6 @@ All outputs are stored under `paper/`:
 
 6. Evaluate continuous flow baselines: `uv run src/eval_flow.py --run-path <path-to-bc-checkpoints>`
     - Results are written to `paper/stats/results.csv`.
-
-### Optional: fine-tuning and VLASH training
-
-- Fine-tune with inpainting mask: `uv run src/finetune_dd.py --config.run-path <path-to-expert-data> --config.load-dir paper/checkpoints/<wandb-run-name>/<epoch>`
-- Self-forcing fine-tuning: `uv run src/finetune_dd_self_forcing.py --config.run-path <path-to-expert-data> --config.load-dir paper/checkpoints/<wandb-run-name>/<epoch>`
-- VLASH training: `uv run src/train_vlash_dd.py --config.run-path <path-to-expert-data>`
 
 ## Visualization
 
