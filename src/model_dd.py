@@ -110,7 +110,6 @@ class ModelConfig:
     no_mask_token_prob: float = 0.0
     # Decode (realtime_decode-style): schedule (temperature is eval-time only, see EvalConfig.choice_temperature)
     decode_schedule: Literal["cosine", "linear"] = "cosine"
-    choice_temperature: float = 1.0  # Temperature for position selection during decode
     use_remask: bool = False  # Re-mask low-confidence positions during decode; improves quality
     # Weak supervision in continuous action space: L1 on masked positions (nearly correct)
     l1_loss_weight: float = 0.1  # L1 on masked positions; set >0 (e.g. 0.1) to enable
