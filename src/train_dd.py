@@ -54,9 +54,11 @@ class Config:
 
     # Eval during training: same structure as eval_flow.EvalConfig but with model_dd.ModelConfig
     eval_num_evals: int = 128
-    eval_num_flow_steps: int = 5  # More decode steps → better action quality (align with eval_dd)
+    eval_num_flow_steps: int = 8
     eval_inference_delay: int = 0
     eval_execute_horizon: int = 1
+    eval_choice_temperature: float = 1.0
+    eval_decode_temperature: float = 1.0
     eval_model: _model_dd.ModelConfig = dataclasses.field(default_factory=_model_dd.ModelConfig)
 
     learning_rate: float = 3e-4
@@ -83,6 +85,8 @@ def _make_eval_config(config: Config, execute_horizon: int) -> _eval.EvalConfig:
         num_flow_steps=config.eval_num_flow_steps,
         inference_delay=config.eval_inference_delay,
         execute_horizon=execute_horizon,
+        choice_temperature=config.eval_choice_temperature,
+        decode_temperature=config.eval_decode_temperature,
         method=_eval.NaiveMethodConfig(),
         model=config.eval_model,  # type: ignore[arg-type]  # eval() does not use config.model
     )
