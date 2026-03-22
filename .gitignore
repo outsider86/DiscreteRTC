@@ -228,3 +228,6 @@ logs-bc/
 logs-dd-finetune/
 logs-vlash-dd/
 logs-dd-self-forcing/
+
+visualization/
+docs/
