@@ -77,7 +77,7 @@ class Config:
     eval_execute_horizon: int = 1
     eval_model: _model_dd.ModelConfig = dataclasses.field(default_factory=_model_dd.ModelConfig)
 
-    log_dir: str = "logs-dd-self-forcing"  # Output directory for checkpoints
+    log_dir: str = "train_logs_paper"  # Output directory for checkpoints
 
     # Fine-tuning LR
     learning_rate: float = 3e-5

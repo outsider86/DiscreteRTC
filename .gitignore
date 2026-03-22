@@ -220,8 +220,12 @@ rtc-assets/
 train_logs/
 eval_logs/
 eval_output/
-# Training and evaluation logs (keep results like eval_dd_output/ for commit)
+train_logs_paper/
+eval_logs_paper/
+# Training and evaluation logs
 logs-dd/
 logs-expert/
 logs-bc/
 logs-dd-finetune/
+logs-vlash-dd/
+logs-dd-self-forcing/

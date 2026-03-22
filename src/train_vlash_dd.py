@@ -27,7 +27,7 @@ import train_expert
 import compute_robot_indices
 
 WANDB_PROJECT = "rtc-kinetix-vlash"
-LOG_DIR = pathlib.Path("logs-vlash-dd")
+LOG_DIR = pathlib.Path("train_logs_paper")
 
 
 @dataclasses.dataclass(frozen=True)

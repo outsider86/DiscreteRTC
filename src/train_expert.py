@@ -56,7 +56,7 @@ class Config:
     lr: float = 3e-4
 
 
-LOG_DIR = pathlib.Path("logs-expert")
+LOG_DIR = pathlib.Path("train_logs_paper")
 WANDB_PROJECT = "rtc-kinetix-expert"
 LARGE_ENV_PARAMS = {
     "num_polygons": 12,
