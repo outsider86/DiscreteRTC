@@ -277,7 +277,7 @@ def main(
         "worlds/l/car_launch.json",
     ),
     seed: int = 0,
-    output_dir: str | None = "eval_logs_paper",
+    output_dir: str | None = "eval_logs_paper/stats",
     parallel_index: int | None = None,
     parallel_total: int | None = None,
 ):
