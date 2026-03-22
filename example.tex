@@ -1,0 +1,749 @@
+\documentclass{article}
+
+% \usepackage{corl_2026} % Use this for the initial submission.
+% \usepackage[final]{corl_2026} % Uncomment for the camera-ready ``final'' version.
+\usepackage[preprint]{corl_2026} % Uncomment for pre-prints (e.g., arxiv); This is like ``final'', but will remove the CORL footnote.
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{subcaption}
+
+% Custom commands
+\newcommand{\methodname}{DiscreteRTC}
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\title{Discrete Diffusion Policies \\ are Natural Asynchronous Executors}
+
+% NOTE: authors will be visible only in the camera-ready and preprint versions (i.e., when using the option 'final' or 'preprint').
+% 	For the initial submission the authors will be anonymized.
+
+\author{
+  Jane E.~Doe\\
+  Department of Electrical Engineering and Computer Sciences\\
+  University of California Berkeley
+  United States\\
+  \texttt{janedoe@berkeley.edu} \\
+}
+
+
+\begin{document}
+\maketitle
+
+%===============================================================================
+
+\begin{abstract}
+% [SENT] physical AI needs real-time but models are slow (Para 1)
+Physical AI systems are growing ever more capable, but the increasing model sizes bring higher inference latency, a critical problem for cyber-physical systems that must act in real time.
+% [SENT] async + RTC solves it (Para 2)
+Asynchronous execution, where a policy \emph{thinks while acting}, offers a promising solution. Real-time chunking (RTC) further resolves inter-chunk discontinuity by posing chunk transitions as inpainting: freezing already-committed actions and generating the rest to be consistent with them.
+% [SENT] RTC with flow-matching has four limitations (Para 3)
+However, we show that RTC with a flow-matching action head is far from ideal: its inpainting relies on inference-time gradient corrections rather than the base policy, leading to no pre-training benefit, need for inpainting-specific fine-tuning, heuristic guidance weights, and extra inference cost.
+% [SENT] discrete diffusion resolves all four (Para 4)
+We observe that discrete diffusion policies---which generate actions by iteratively unmasking tokens---are \emph{natural} asynchronous executors: inpainting is their native operation, resolving all four limitations. Early stopping further provides natural adaptive guidance and reduces inference cost.
+% [SENT] DiscreteRTC and validation (Para 5)
+We propose DiscreteRTC, and experiments on dynamic simulated benchmarks and real-world manipulation tasks demonstrate that it outperforms continuous RTC and other baselines in both success rate and throughput, while being simpler and computationally cheaper.
+\end{abstract}
+
+% Two or three meaningful keywords should be added here
+\keywords{Discrete Diffusion, Real-Time Control, Asynchronous Execution}
+
+
+Main Demo PlaceHolder
+
+Main Demo PlaceHolder
+
+Main Demo PlaceHolder
+
+Main Demo PlaceHolder
+
+Main Demo PlaceHolder
+
+Main Demo PlaceHolder
+
+Main Demo PlaceHolder
+
+
+
+%===============================================================================
+\newpage
+\section{Introduction}
+\label{sec:intro}
+
+% [PARA 1] Physical AI is advancing rapidly, and real-time performance is non-negotiable.
+% [SENT] AI systems increasingly interact with the physical world
+Physical AI systems have grown more and more capable~\citep{black2024pi_0, intelligence2025pi_, bjorck2025gr00t}: from dexterous manipulators~\citep{openai2018learning, an2025dexterous} assembling intricate parts to mobile robots capable of different athletic events~\citep{su2025hitter, zhang2026learningathletichumanoidtennis, yu2025skillmimic}.
+However, this growing agility and intelligence come at the cost of ever-larger model sizes and inference times~\citep{kaplan2020scaling}.
+% [SENT] real-time constraint is fundamental
+Unlike chatbots~\citep{brown2020language, yang2025qwen3} or image generators~\citep{wan2025wan}, these cyber-physical systems always operate in real time: the world keeps evolving while the robot is ``thinking''.
+% [SENT] consequence of delay
+Therefore, delays between sensing and acting have a tangible impact on performance---a slow and laggy policy does not merely annoy a user; it can sometimes cause catastrophic consequences.
+
+
+
+% [PARA 2] Async execution as an alternative to chasing latency.
+% [SENT] async eases the latency pressure
+Asynchronous execution provides a promising solution: instead of optimizing model latency to match the control frequency---a goal extremel hard for running modern VLAs~\citep{black2025real}---a policy can simply \emph{think while acting}, hiding inference time behind execution.
+% [SENT] action chunking enables this
+Action chunking~\citep{chi2025diffusion, lai2025action}, where a policy outputs a sequence of $H$ future actions per inference call, provides the temporal structure needed for the asynchronous execution.
+% [SENT] naive methods have issues
+However, naive strategies---either switching chunks immediately or smoothing via temporal ensembling~\citep{zhao2023learning}---suffer from inter-chunk discontinuity or invalid actions, thus degrades the performance.
+% [SENT] RTC solves this elegantly
+Real-time chunking (RTC)~\citep{black2025real} elegantly resolves this by posing chunk transitions as \emph{inpainting}: freezing already-committed actions and generating the rest to be consistent with them, achieving significant performance gains in dynamic tasks.
+
+
+
+
+% [PARA 3] RTC with flow-matching is suboptimal; we can do better.
+% [SENT] RTC with flow-matching is limited
+Despite its elegance, RTC with a flow-matching action head is far from ideal.
+% [SENT] root cause analysis
+In this paper, we systematically analyze its limitations and show that they stem from the same root cause: the inpainting capability comes from the inference-time correction (\eg, $\Pi$GDM~\citep{song2023pseudoinverse}), not from the base policy.
+% [SENT] four limitations
+Concretely:
+% [SENT] (a) pre-training gap
+(a)~\emph{Pre-training without inpainting}: the flow policy is not pre-trained on action chunks with inconsistent noise levels, so scaling pre-training does not directly improve asynchronous performance;
+% [SENT] (b) fine-tuning burden
+(b)~\emph{Fine-tuning required}: as a consequence, adequate inpainting quality demands a dedicated fine-tuning stage with techniques such as action-suffix conditioning~\citep{black2025training, wang2026real};
+% [SENT] (c) heuristic weights
+(c)~\emph{Heuristic guidance weights}: the soft-masking schedule and clipping threshold are hand-designed and must be re-tuned per task and model;
+% [SENT] (d) extra cost
+(d)~\emph{Extra inference cost}: computing the guidance term at every denoising step roughly doubles computation, ironically increasing the very latency RTC aims to hide.
+
+
+
+% [PARA 4] Key insight: discrete diffusion is a natural inpainter.
+% [SENT] our observation
+Our key observation is that by replacing the action head with a discrete diffusion policy, all the aforementioned limitations can be resolved at once. Or to put it simply: \emph{\textbf{Discrete Diffusion Policies are Natural Asynchronous Executors}}.
+% [SENT] why it works
+Since inpainting is the \emph{native operation} of discrete diffusion policies,
+it is (a)~\emph{Pre-trained with inpainting} so that scaling pre-training directly benefits asynchronous execution;
+% [SENT] (b) no fine-tuning needed
+for the same reason, it is (b)~\emph{Fine-tuning free} to get the inpainting capability;
+% [SENT] (c) no heuristic weights
+the early-stopping mechanism provides (c)~\emph{Natural guidance weights} via the number of unmasked tokens;
+% [SENT] (d) reduced inference cost
+and leads to (d)~\emph{Lower inference cost} by simply forwarding the base policy at inference time.
+
+
+% [PARA 5] We propose DiscreteRTC and validate it.
+% [SENT] we propose DiscreteRTC
+We propose the resulting inference-time method, \textbf{DiscreteRTC}, which replaces the gradient-based inpainting in flow-matching based RTC with the native unmasking generation of discrete diffusion policies.
+% [SENT] experimental validation
+Experiments on dynamic simulated benchmarks Kinetix and real-world manipulation tasks demonstrate that DiscreteRTC achieves higher success rates and throughput than continuous RTC and other baselines, while being much simpler to implement and computationally cheaper.
+
+
+% [PARA] Summary of contributions.
+% [SENT] contributions list
+In summary, our contributions are:
+\begin{enumerate}
+    \item We provide a systematic analysis of the fundamental limitations of the currently popular RTC framework with a Flow-Matching action head.
+    \item We show that these limitations can be naturally resolved by discrete diffusion policies. In this sense, \emph{\textbf{Discrete Diffusion Policies are Natural Asynchronous Executors}}.
+    \item Through simulation and real-world experiments, we demonstrate that the resulting method, \textbf{DiscreteRTC}, (a) achieves higher task success rates and throughputs under varying delays, (b) outperforms training-time methods that require fine-tuning, (c) uses less inference time, (d) and can be integrated with advanced techniques such as VLASH~\citep{tang2025vlash}.
+\end{enumerate}
+
+%===============================================================================
+\newpage
+\section{Background and Preliminaries}
+\label{sec:background}
+
+\subsection{Real-time Chunking}
+\label{sec:bg_rtc}
+
+% [PARA] Action chunking outputs a sequence of actions per inference call.
+% [SENT] definition of action chunking
+\textbf{Action Chunking Flow Policy.}
+We consider an action chunking policy $\pi$ that receives an observation $\mathbf{o}_t$ and outputs a chunk of $H$ future actions $\mathbf{A}_t = (a_t, a_{t+1}, \ldots, a_{t+H-1})$.
+State-of-the-art VLAs~\citep{black2024pi_0, intelligence2025pi_} generate action chunks using conditional flow matching~\citep{lipman2022flow}: noise $\mathbf{A}^0_t \sim \mathcal{N}(0, I)$ is sampled and integrated through the learned velocity field $v_\pi$ from $\tau=0$ to $1$:
+\begin{equation}
+    \mathbf{A}_t^{\tau+\frac{1}{n}} = \mathbf{A}_t^\tau + \frac{1}{n} v_\pi( \mathbf{A}_t^\tau, \mathbf{o}_t, \tau),
+    \label{eq:flow_step}
+\end{equation}
+where $\tau \in [0, 1)$ is the flow timestep and $n$ is the number of denoising steps.
+% [SENT] training objective
+During training, all actions within a chunk are corrupted at the same noise level $\tau$ and denoised together.
+
+% [PARA] RTC runs inference asynchronously and uses inpainting for continuity.
+% [SENT] motivation for async execution
+\textbf{Real-Time Chunking.}
+Running modern VLAs with action generation time $\delta$ smaller than the controller period $\Delta t$ (typically 20$\sim$50\,ms) is nearly impossible~\citep{black2025real}: even a 7B OpenVLA model optimized for speed~\citep{kim2025fine, kim2024openvla} requires $\delta = 321$\,ms on a server-grade A100 GPU.
+% [SENT] async execution and discontinuity
+The robot must therefore act while the policy is still computing, \ie, asynchronous execution.
+Naively switching to a new action chunk as soon as it is ready, however, leads to inter-chunk discontinuity: adjacent chunks may correspond to different behavioral modes, producing jerky motions at chunk boundaries.
+
+% [SENT] RTC overview
+Real-time chunking (RTC)~\citep{black2025real} addresses this discontinuity by posing asynchronous execution as an \emph{inpainting} problem.
+% [SENT] delay and frozen actions
+If inference takes $d$ (inference delay) steps to complete, the first $d$ actions of the new chunk are ``frozen'' to the values from the previous chunk before the new chunk becomes available.
+% [SENT] inpainting formulation
+The remaining actions must be generated to be consistent with this frozen prefix.
+% [SENT] ΠGDM guidance steers generation toward the frozen prefix
+For flow-matching policies, RTC implements this inpainting via $\Pi$GDM~\citep{song2023pseudoinverse}, adding a gradient-based correction at each denoising step that steers the generation toward the target prefix $\mathbf{Y}$:
+\begin{equation}
+    \mathbf{g} = \left(\mathbf{Y} - \hat{f}_{\mathbf{A}^1}(\mathbf{A}^\tau)\right)^\top \text{diag}(\mathbf{W}) \cdot \frac{\partial \hat{f}_{\mathbf{A}^1}}{\partial \mathbf{A}'}\bigg|_{\mathbf{A}'=\mathbf{A}^\tau},
+    \label{eq:guidance}
+\end{equation}
+where $\hat{f}_{\mathbf{A}^1}$ denotes the one-step denoising function and $\mathbf{W}$ is a vector of soft-masking weights.
+% [SENT] soft masking with exponential decay
+The weights $\mathbf{W}$ assign $1$ to the first $d$ frozen actions, exponentially decay for the overlapping region, and $0$ for the final $s$ (execution horizon) actions.
+During inference, the robot starts an inference every $s$ steps and execute the next $s$ actions from the most recent inference results.
+
+
+\subsection{Discrete Diffusion Policies}
+\label{sec:bg_discrete}
+
+% [PARA] Discrete diffusion generates sequences by iteratively unmasking tokens.
+% [SENT] tokenization of continuous actions
+Discrete diffusion policies first tokenize continuous actions into discrete tokens via a learned or fixed vocabulary (\eg, VQ-VAE~\citep{VQVAE}, FAST~\citep{FAST} or $k$-bin quantization).
+With a slight abuse of notation, we reuse $\mathbf{A}_t$ to denote the resulting action token sequence.
+% [SENT] forward process masks tokens
+The forward process replaces tokens with a special $[\text{MASK}]$ token with a masking schedule,
+% [SENT] reverse process predicts masked tokens conditioned on unmasked ones
+while the reverse process iteratively executes unmasking operations conditioned on the current fully or partially masked token sequence.
+
+% [SENT] two components
+A discrete diffusion policy is trained for one-step unmasking operation.
+It consists of two components: $p_\pi$, which predicts the probability distribution over all token positions, and $f_\pi$, which samples and select the tokens should be unmasked at the current step from the distribution.
+At each step $k$, the policy first predicts token identities via $p_\pi$ and then selects which tokens to unmask via $f_\pi$:
+\begin{equation}
+    \mathbf{A}_t^{k+1} = \pi(\mathbf{A}_t^k, \mathbf{o}_t) = f_\pi\!\bigl(p_\pi(\mathbf{A}_t^k, \mathbf{o}_t)\bigr),
+    \label{eq:dd_step}
+\end{equation}
+where $\mathbf{A}_t^k$ is the partially unmasked token sequence at step $k$ and $\mathbf{o}_t$ is the observation.
+% [SENT] training objective
+During training, the discrete diffusion policy learns to predict the fully unmasked ground-truth action token sequence given the randomly masked token sequence.
+
+
+%===============================================================================
+
+
+
+\section{Flow-Matching is not suitable for RTC}
+\label{sec:limitations}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/continuousRTC.pdf}
+    \caption{RTC with a flow-matching head. The flow-matching head is ill-suited for RTC because (a) during pre-training, the base policy is not trained on inpainting tasks; (b) to acquire this capability, a specially designed fine-tuning stage is required; (c) at inference time, RTC relies on heuristic guidance weight design; and (d) incurs extra computation for action chunk generation.}
+    \label{fig:continuousRTC}
+    \vskip -0.2in
+\end{figure}
+
+% [PARA] Overview: four limitations of applying flow-matching to RTC.
+% [SENT] section roadmap
+In this section, we analyze the limitations of applying flow-matching policies to real-time chunking, as illustrated in Figure~\ref{fig:continuousRTC}, establishing the motivation for the discrete diffusion-based approach.
+
+
+\newpage
+\subsection{Pre-training without Inpainting}
+\label{sec:lim_pretrain}
+
+% [PARA] Flow-matching pre-training assumes uniform noise across the chunk, which conflicts with the mixed-noise pattern required by RTC.
+% [SENT] standard training uses uniform noise level
+Pre-training of flow-matching policies learns to generate action chunks conditioned on observations and a noised action chunk.
+% [SENT] all actions share the same noise level during training
+During training, all actions within a chunk are corrupted at the \textbf{consistent} noise level $\tau$ and are denoised together under a single computational budget.
+% [SENT] RTC requires mixed noise levels across the chunk
+However, during RTC, the generation process starts from an action chunk with \textbf{inconsistent} noise levels across positions.
+% [SENT] guidance is external and unseen during pre-training
+Although the $\Pi$GDM~\citep{song2023pseudoinverse} guidance provides an external correction at inference time, the model has never encountered such corrections---nor the mixed-noise chunk pattern---during pre-training.
+% [SENT] scaling pre-training does not help inpainting
+As a result, scaling up pre-training data or model capacity does not directly improve inpainting quality.
+
+
+% [PARA] Closing the pre-training gap requires a dedicated fine-tuning stage with mixed-noise chunks.
+% [SENT] mixed-noise chunks must be introduced during training
+Therefore, to improve the inpainting capability of the base model, the mixed-noise chunk pattern must be explicitly introduced during training along with a corresponding inpainting objective.
+% [SENT] fine-tuning adds complexity and may hurt base quality
+This requires fine-tuning the model with an explicit inpainting loss, adding training complexity and risking interference with the base generation quality~\citep{black2025training, wang2026real}.
+% [SENT] engineering and compute burden for large VLAs
+This represents a non-trivial engineering and computational burden, particularly for large VLAs that are already expensive to fine-tune.
+% [SENT] large-scale pre-training may demand large-scale fine-tuning
+Moreover, the fine-tuning recipe itself must be carefully designed: for models pre-trained at large scale, a correspondingly large-scale fine-tuning effort may be necessary to reliably acquire the inpainting capability without degrading other abilities.
+
+\subsection{Inference with Heuristic Corrections}
+\label{sec:lim_inference}
+
+As mentioned in the Sec.~\ref{sec:bg_rtc}, the forward of RTC with flow-matching is presented as follows:
+
+\begin{equation}
+\label{eqn: continuousRTC forward}
+\mathbf{A}_t^{\tau+\frac{1}{n}} = \mathbf{A}_t^\tau + \frac{1}{n}\!\left(v_\pi(\mathbf{A}_t^\tau, \mathbf{o}_t, \tau) + \min\!\left(\beta,\, \frac{1-\tau}{\tau \cdot r_\tau^2}\right) \mathbf{g} \right).
+\end{equation}
+
+% [PARA] The guidance weights and clipping threshold are hand-designed heuristics that do not adapt to the inference situation.
+% [SENT] soft masking uses a hand-designed exponential decay
+The soft-masking weights $W$ in Equation~\ref{eq:guidance} follow a hand-designed exponential decay schedule.
+% [SENT] the schedule is fixed and only empirically validated
+This schedule is fixed across different inference situations---varying delays, execution horizons, and tasks---and is validated only through empirical studies.
+% [SENT] gradient clipping is necessary but task-dependent
+The gradient clipping threshold $\beta$, introduced to prevent instability with few denoising steps, is similarly sensitive: its optimal value depends on the task, the model architecture, and the number of denoising steps.
+% [SENT] tuning burden across configurations
+Together, these hyperparameters create a tuning burden that is absent in RTC with flow-matching, or requires other specially designed continuation~\citep{liu2026learning}.
+
+% [PARA] Gradient-based guidance roughly doubles per-step cost, ironically increasing the very latency it aims to hide.
+% [SENT] VJP through the denoising network at every step
+Moreover, at each denoising step, computing the guidance term requires a vector-Jacobian product (VJP).
+% [SENT] roughly doubles per-step computation
+This roughly doubles the per-step computation, directly counteracting the latency reduction that asynchronous execution is meant to provide.
+% [SENT] ironic tension: guidance increases the delay it tries to hide
+There is an ironic tension: the mechanism designed to enable smooth asynchronous execution itself increases the inference delay $d$, shrinking the time window available for generating fresh actions.
+
+%===============================================================================
+
+\section{Discrete Diffusion Policies are Natural Asynchronous Executors}
+\label{sec:method}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/discreteRTC.pdf}
+    \caption{RTC with a discrete diffusion head. The discrete diffusion head is naturally suited for RTC because (a) during pre-training, the base policy is already trained on inpainting tasks; (b) consequently, no inpainting-specific fine-tuning is required; (c) at inference time, early stopping from the previous inference leaves a natural and adaptive guidance signal; and (d) fewer tokens need to be unmasked per step, reducing the computational cost of each forward pass.}
+    \label{fig:discreteRTC}
+    \vskip -0.2in
+\end{figure}
+
+% [PARA] Section overview: discrete diffusion naturally resolves the limitations of flow-matching RTC.
+% [SENT] section roadmap
+In this section, we show that discrete diffusion policies naturally resolve the limitations of flow-matching-based RTC identified in Section~\ref{sec:limitations}, as illustrated in Figure~\ref{fig:discreteRTC}.
+
+\subsection{Pre-Training with Inpainting}
+\label{sec:method_inpaint}
+
+% [PARA] Inpainting is the native operation of discrete diffusion, resolving (a) and (b).
+% [SENT] inpainting is structurally identical to standard masked generation
+In discrete diffusion, inpainting is structurally identical to standard unmasking generation: given a partially masked token sequence, the model predicts the missing tokens.
+% [SENT] no modification needed for inpainting
+No architectural modification, no additional loss term, and no inference-time guidance are needed---\textbf{the model generates conditioned on unmasked tokens exactly as it was trained}.
+% [SENT] resolves (a): pre-training directly improves inpainting
+Therefore, pre-training directly improves the model's ability to inpaint: scaling model, data, and pre-training yield better generation.
+
+% [SENT] resolves (b): no inpainting-specific fine-tuning needed
+Since the inpainting capability is acquired during pre-training, a discrete diffusion policy can be deployed for asynchronous execution immediately, with no inpainting-specific fine-tuning.
+
+\subsection{Inference with Natural Unmasking}
+\label{sec:method_unmasking}
+
+% [PARA] Inpainting reduces to a single forward pass of the base policy.
+% [SENT] simple forward pass achieves inpainting
+Since the base policy is pre-trained to solve inpainting, after placing the previous action chunk at the consistent time index, inpainting is achieved by simply forwarding the base policy $\pi$:
+\begin{equation}
+    \label{eq:discrete_rtc_forward}
+    \mathbf{A}_t^{k+1} = \pi(\mathbf{A}_t^k, \mathbf{o}_t).
+\end{equation}
+
+% [PARA] Unmasked tokens carry immediate semantic meaning, enabling early stopping.
+% [SENT] key property: unmasked tokens are already valid
+With this formulation, we reconsider the issues of guidance weight and inference cost.
+Here, we exploit a key property of discrete diffusion: once a token is unmasked, it carries concrete semantic meaning.
+% [SENT] contrast with continuous noisy actions
+This fundamentally differs from continuous noisy actions, which become valid only when the noise level reaches zero.
+% [SENT] both intermediate start and early stop are possible
+\textbf{Therefore, as indicated in Equation~\ref{eq:discrete_rtc_forward}, we can not only start inference from an intermediate state, but also terminate it at an intermediate stage.}
+
+% [PARA] Early stopping provides natural guidance and reduces cost.
+% [SENT] resolves (c): partially unmasked actions serve as natural adaptive guidance
+To ensure that executable actions are valid before the next inference, we only need the next $s$ actions in the chunk to be fully unmasked, allowing the unmasking process to stop early.
+% [SENT] remaining tokens carry forward as guidance for next inference
+The remaining $H - d - s$ actions stay in a partially unmasked state, which serves as a \emph{natural and adaptive} guidance signal for the next inference, replacing the heuristic soft-masking schedule of continuous RTC.
+
+% [PARA] Resolves (d): inference cost is reduced rather than increased.
+% [SENT] fewer unmasking steps needed
+Moreover, since unmasking starts from an intermediate state and ends at an intermediate stage, keeping the number of tokens unmasked per step constant reduces the total number of unmasking steps to roughly $s / H$ of the original.
+% [SENT] cost reduction instead of cost increase
+This means that, instead of \emph{increasing} inference cost as in flow-matching-based RTC, our method can actually \emph{reduce} it.
+% [SENT] alternative: finer-grained actions at same cost
+Alternatively, we can keep the number of inference steps fixed and reduce the number of tokens unmasked per step, thereby producing finer-grained actions without increasing the action generation cost.
+
+%===============================================================================
+
+\section{Experiments}
+\label{sec:experiments}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/kinetix_main.pdf}
+    \caption{Experimental Results in Kinetix.
+    \textbf{Left}: Average solve rate and throughputs across all environments with different inference delays;
+    \textbf{Right}: Solve rates for every tasks with different inference delays.
+    The executions horizon follows $s = \max(1, d)$ and each datapoint represents 2048 trials.}
+    \label{fig:kinetix_main}
+    \vskip -0.2in
+\end{figure}
+
+
+% [PARA] Experimental questions framing the evaluation.
+% [SENT] three experimental questions
+In our experiments, we aim to answer the following questions:
+
+\begin{itemize}
+    \item How does DiscreteRTC performs comparing to existing inference-time and training-time asynchronous execution methods under increasing inference delays?
+    \item How does the natural guidance of DiscreteRTC effect the performance and efficiency?
+    \item How does DiscreteRTC affect the performance and speed of real-world robots?
+\end{itemize}
+
+\subsection{Simulated Benchmark}
+\label{sec:exp_sim}
+
+% [PARA] Benchmark design: dynamic tasks where asynchronous execution is necessary.
+% [SENT] quasi-static benchmarks are insufficient
+% [SENT] we use dynamic tasks with force-based control
+Following RTC, we first evaluate DiscreteRTC in Kinetix~\citep{matthews2024kinetix}, a simulated benchmark of dynamic tasks with force-based control, where inference delay necessitates asynchronous execution.
+% [SENT] tasks involve dynamic motions
+All tasks involve dynamic motions such as throwing, catching, and balancing.
+% [SENT] Gaussian noise makes closed-loop corrections critical
+To simulate imperfect actuation, we add Gaussian noise to the actions to make closed-loop corrections crucial for success~\citep{wang2026real}.
+
+% [PARA] Data generation and policy training.
+% [SENT] expert policies via RL
+\textbf{Setup.}
+We implemented the discrete diffusion policies upon the official codebase and datasets from RTC~\citep{wang2026real}.
+% [SENT] dataset generation from multiple experts
+For fair comparison, we adopt the same training setup (optimizer, learning rate, epochs, etc.) and the same policy network size except the final layer for logits output.
+% [SENT] discrete diffusion policy training
+We use a trivial $512$-bin quantization for the action chunk discretization.
+Please refer to Appendix~\ref{app: simexp} for more details.
+
+% [PARA] Baselines covering the main alternative approaches.
+% [SENT] baseline descriptions
+\textbf{Baselines.} We compare against the flow-matching (Continuous) and the discrete diffusion (Discrete) action head with the following asynchronous execution strategies:
+\begin{itemize}
+
+    \item \textbf{Naive Async.} Chunks are generated from scratch and switched when the new one is ready.
+    \item \textbf{Bidirectional decoding (BID)}~\citep{liu2024bidirectional}. Uses rejection sampling to maintain cross-chunk continuity. We use a batch size of $N = 16$ with no weak policy as the official implementation.
+    \item \textbf{RTC}~\citep{black2025real}. Flow-matching policy with $\Pi$GDM inpainting and soft masking, representing the state-of-the-art asynchronous execution method for continuous policies.
+\end{itemize}
+
+
+\begin{figure}[t]
+    \centering
+    \begin{minipage}{0.5\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/kinetix_steps.pdf}
+        \caption{Required iterative steps of different policy architectures in Kinetix with $s = \max(1, d)$.}
+        \label{fig: kinetix_steps}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/kinetix_ablation.pdf}
+        \caption{Experimental results of extended baselines in Kinetix with $s = \max(1, d)$.}
+        \label{fig: kinetix_abl}
+    \end{minipage}
+    % \vskip -0.3in
+\end{figure}
+
+
+% [PARA] Main simulation results.
+% [SENT] results figure reference
+\textbf{Results.}
+We present the main results in Kinetix in Figure~\ref{fig:kinetix_main}.
+% [SENT] discrete policies outperform continuous counterparts overall
+Across all inference delays, DiscreteRTC consistently outperform ContinuouRTC and other variants on both solve rates and throughputs, showing the great advantages of the native inpainting capability in discrete diffusion policies.
+% [SENT] figure 4
+Moreover, as shown in Figure~\ref{fig: kinetix_steps}, DiscreteRTC requires fewer iterative steps than ContinuousRTC, especially under large delays with execution horizon as discussed in the Sec.~\ref{sec:method_unmasking}.
+
+% [SENT] ablation and compatibility with other methods
+Figure~\ref{fig: kinetix_abl} represents the experimental results of extended baselines in Kinetix.
+(1) First, under varying delays, the DiscreteRTC can outperform \textit{Training-time Continuous RTC}~\citep{black2025training}, which is fine-tuned with an explicit objective and recipe to improve inpainting, further demonstrating the strong performance of the fine-tuning free DiscreteRTC.
+(2) Next, by using fixed unmasking steps during inference, the \textit{DiscreteRTC + Fixed Steps} baseline can achieve better performance by generating more fine-grained actions with the same computation budget as discussed in Sec.~\ref{sec:method_unmasking}.
+(3) Moreover, \textit{DiscreteVLASH}, which integrates the VLASH~\citep{tang2025vlash} can achieve more stable performance across varying delays but at the cost of performance drop under small delays.
+This demonstrates that discrete
+ diffusion can be seamlessly combined with advanced inference-time methods for further gains.
+
+
+\subsection{Real-World Results}
+\label{sec:exp_real}
+
+Next, we validate the DiscreteRTC in the real world.
+
+\textbf{Setup.}
+% Develop with StarVLA, using Qwen2.5-VL-3B-Instruct-Action as VLM backbone, implement a separate discrete diffusion head
+We develop the .
+
+
+
+% [PARA] Task descriptions.
+% [SENT] task list with steps and time cutoffs
+\textbf{Tasks.}
+
+
+% [PARA] Real-world baselines.
+% [SENT] baselines for just DiscreteRTC DiscreteSync ContinuousRTC ContinuousSync
+\textbf{Baselines.} 
+
+\newpage
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+Real-Experiments Placeholder
+
+
+
+% [PARA] Real-world results.
+% [SENT] results with cumulative progress and throughput
+\textbf{Results.}
+Results Placeholder
+
+Results Placeholder
+
+Results Placeholder
+
+
+%===============================================================================
+
+\section{Related Work}
+\label{sec:related}
+
+We briefly review the most relevant works in this section with an extended discussion in Appendix~\ref{app:related}.
+
+\textbf{Efficient VLA via Discrete Diffusion.}
+Prior efforts to accelerate VLAs span system-level optimization~\citep{ma2025running} and action tokenization~\citep{pertsch2025fast, liu2026oat, intelligence2025pi_}.
+However, tokenization-based methods still rely on autoregressive decoding at inference time, limiting throughput.
+Discrete diffusion~\citep{lou2023discrete} replaces autoregressive generation with parallel unmasking, and several recent works apply it to VLA action heads~\citep{liang2025discrete, wen2025llada, wen2025dvla, chen2025unified, ye2025dream}.
+While these works demonstrate the efficiency of discrete diffusion, none investigate its structural advantage for asynchronous execution, which is the focus of our work.
+
+\textbf{Asynchronous Execution Strategy.}
+When inference latency exceeds the control period, the robot must act while computing~\citep{xiao2020thinking}.
+With action chunking, strategies range from naive chunk switching and temporal ensembling~\citep{zhao2023learning} to rejection-based methods~\citep{liu2024bidirectional}.
+Real-time chunking (RTC)~\citep{wang2026real} poses chunk transitions as inpainting via $\Pi$GDM guidance~\citep{song2023pseudoinverse}, with follow-up works improving guidance design~\citep{yang2026abpolicy}, learning inpainting at training time~\citep{black2025training, wang2026real, liu2026learning}.
+However, all of these methods operate within the flow-matching framework, 
+while DiscreteRTC is the first to exploit the native inpainting capability of discrete diffusion policies for natural asynchronous execution.
+
+
+
+%===============================================================================
+
+\section{Discussion and Future Steps}
+\label{sec:conclusion}
+% [PARA] Conclusions: summarize the contribution and key results.
+% [SENT] DiscreteRTC exploits native inpainting of discrete diffusion for async RTC
+\textbf{Conclusions.}
+We presented DiscreteRTC, which exploits the native inpainting capability of discrete diffusion for asynchronous real-time control, eliminating the need for inpainting-specific fine-tuning, heuristic guidance weights, and extra inference cost inherent to flow-matching-based RTC.
+% [SENT] experimental validation and compatibility with VLASH
+Simulated and real-world experiments show that DiscreteRTC outperforms continuousRTC and other asynchronous baselines, and can be combined with methods such as VLASH for further gains.
+
+% [PARA] Limitations: naive tokenization and modularized architecture.
+% [SENT] naive k-bin quantization ignores temporal structure
+\textbf{Limitations.}
+Our approach uses naive $k$-bin quantization, which ignores the temporal structure of action sequences.
+% [SENT] modularized AR VLM + DD action head limits information flow
+In addition, the modularized architecture---an autoregressive VLM paired with a separate discrete diffusion action head---prevents the backbone from participating in iterative unmasking, limiting information flow between perception and action.
+
+% [PARA] Future steps: addressing both limitations.
+% [SENT] two directions: time-causal tokenizer and unified DD VLA backbone
+\textbf{Future Steps.}
+These limitations point to two directions: (1) a \emph{time-causally ordered action tokenizer} that produces temporally ordered, compact token representations; and (2) a \emph{unified discrete diffusion VLA} in which observation reasoning and action generation share the same backbone.
+
+%===============================================================================
+
+\clearpage
+% The acknowledgments are automatically included only in the final and preprint versions of the paper.
+\acknowledgments{If a paper is accepted, the final camera-ready version will (and probably should) include acknowledgments. All acknowledgments go at the end of the paper, including thanks to reviewers who gave useful comments, to colleagues who contributed to the ideas, and to funding agencies and corporate sponsors that provided financial support.}
+
+%===============================================================================
+
+% no \bibliographystyle is required, since the corl style is automatically used.
+\bibliography{example}  % .bib
+
+
+
+\newpage
+\appendix
+%===============================================================================
+\section{Extended Related Works}
+\label{app:related}
+
+% [PARA] Discrete diffusion for control is underexplored.
+\textbf{Efficient VLA via Discrete Diffusion.}
+% Many previous efficient VLA work focuses on system-level optimization
+To train and run VLAs efficiently, many prior efforts have focused on system-level optimization~\citep{kim2024openvla}, such as applying CUDA graph compilation and operator fusion to achieve real-time VLA inference on consumer GPUs~\citep{ma2025running}.
+% Another line fcous on the action tokenization, since it can accelerate VLA-pre-training but suffer from the auto-regressive style inference, so just use flow-matching head
+Action tokenization is another promising direction that leverages the fully optimized VLM pipeline by converting continuous actions into discrete tokens~\citep{intelligence2025pi_}.
+Beyond trivial bin-based discretization, works like FAST~\citep{pertsch2025fast} and OAT~\citep{liu2026oat} compress action chunks into compact discrete token sequences, significantly reducing the required generation length.
+However, these tokenization-based approaches still rely on autoregressive decoding at inference time, which inherently limits parallelism and throughput~\citep{intelligence2025pi_}; as a result, many of them fall back to a continuous flow-matching action head for deployment and are only used for efficient large-scale VLA pre-training.
+
+% Discrete Diffusion is proved to be efficient in LLM
+Discrete diffusion~\citep{lou2023discrete} offers a promising alternative by replacing autoregressive generation with parallel unmasking.
+Several recent works have begun exploring this direction:
+\citet{liang2025discrete} apply discrete diffusion to the VLA action head, generating action chunks via iterative re-masking and parallel decoding;
+LLaDA-VLA~\citep{wen2025llada} and DVLA~\citep{wen2025dvla} build unified discrete-diffusion VLA frameworks;
+UD-VLA~\citep{chen2025unified} unifies observation reasoning and action generation within a single discrete diffusion backbone.
+Among them, DreamVLA~\citep{ye2025dream} further replaces the VLM module with a discrete diffusion architecture, making it possible to pre-train the VLA with a unified backbone.
+
+
+% [PARA] Asynchronous execution methods.
+\textbf{Asynchronous Execution Strategy.}
+When inference latency exceeds the control period, the robot must act while the policy is still computing.
+The earliest formulation of this concurrent-control setting is Thinking While Moving~\citep{xiao2020thinking}, which executes the previous action during the current inference.
+With action chunking~\citep{lai2025action}, the simplest strategy is naive asynchronous execution, which switches to a new chunk as soon as it is ready, but this can cause inter-chunk discontinuity.
+Temporal ensembling~\citep{zhao2023learning} smooths consecutive chunks by averaging overlapping actions, at the cost of blurring distinct modes.
+Bidirectional decoding (BID)~\citep{liu2024bidirectional} uses rejection sampling to maintain cross-chunk continuity, but at substantially higher computational cost.
+
+Real-time chunking (RTC)~\citep{wang2026real} elegantly poses chunk transitions as inpainting via $\Pi$GDM~\citep{song2023pseudoinverse} guidance, achieving strong performance on dynamic tasks.
+Following RTC, several works have focused on improving inference-time inpainting through better guidance design:
+ABPolicy~\citep{yang2026abpolicy} formulates the inpainting problem in a B-spline control-point action space for smooth manipulation.
+Orthogonally, another line of follow-up works focuses on training-time methods that directly learn to inpaint during fine-tuning:
+Training-Time RTC~\citep{black2025training} conditions on action prefixes during training to internalize the inpainting capability;
+REMAC~\citep{wang2026real} follows a similar strategy but further eases the training--inference mismatch by mixing ground-truth and predicted actions during fine-tuning;
+Legato~\citep{liu2026learning} learns a continuation-aware flow that reshapes the denoising dynamics to account for known prefixes at training time.
+There are also works that bridge both stages: VLASH~\citep{tang2025vlash} achieves lower policy-input temporal mismatch by estimating future robot states and pre-training the VLA to predict action chunks conditioned on both current observations and future states.
+
+Our method, DiscreteRTC, is the first effort to step outside the flow-matching policy framework and analyze the asynchronous execution problem for discrete diffusion policies. It requires no training-time modification, yet achieves strong performance by exploiting the native inpainting capability of discrete diffusion---and can be combined with methods like VLASH~\citep{tang2025vlash} for further gains.
+
+
+%===============================================================================
+
+\section{Simulation Experiments Details}
+\label{app: simexp}
+
+\textbf{Computation Resources.}
+All simulation experiments are implemented in JAX~\citep{jax2018github} with Flax NNx.
+Expert policy training, data generation, and imitation learning are performed on 8 NVIDIA GPUs, with per-level data sharded across devices using JAX named sharding.
+Each level is assigned to a single device during training.
+
+\textbf{Environment Details.}
+We use Kinetix~\citep{matthews2024kinetix} with the \texttt{Kinetix-Symbolic-Continuous-v1} environment in the ``large'' configuration: 12 polygons, 4 circles, 6 joints, 2 thrusters, 4 motor bindings, and 2 thruster bindings.
+The physics simulation runs at 60\,Hz with a frame skip of 2, yielding an effective control frequency of 30\,Hz.
+All 12 tasks involve dynamic motions: \texttt{grasp\_easy}, \texttt{catapult}, \texttt{cartpole\_thrust}, \texttt{hard\_lunar\_lander}, \texttt{mjc\_half\_cheetah}, \texttt{mjc\_swimmer}, \texttt{mjc\_walker}, \texttt{h17\_unicycle}, \texttt{chain\_lander}, \texttt{catcher\_v3}, \texttt{trampoline}, and \texttt{car\_launch}.
+The action space is 4-dimensional continuous in $[-1, 1]$.
+To simulate imperfect actuation, Gaussian noise with standard deviation 0.1 is added to all actions during both data collection and evaluation.
+Observations are augmented with a 4-frame history stack (\texttt{ObsHistoryWrapper}) and the previous action (\texttt{ActionHistoryWrapper}).
+
+\textbf{Expert Policy Training.}
+Expert policies are trained with PPO~\citep{schulman2017proximal} augmented with Relative Policy Optimization (RPO, $\alpha=0.3$).
+For each of the 12 levels, we train 8 independent seeds.
+Each seed runs for 1{,}000 updates with 256 parallel environments and 256 steps per environment per update (approximately 65 million environment steps per seed).
+The policy and value networks are two-layer MLPs with hidden dimension 256 and orthogonal initialization.
+We use Adam with learning rate $3 \times 10^{-4}$ and gradient clipping at norm 1.0.
+PPO hyperparameters: discount $\gamma=0.995$, GAE $\lambda=0.9$, clipping $\epsilon=0.2$, value loss coefficient 0.5, 8 minibatches, and 4 epochs per update.
+A dense reward wrapper based on distance shaping is used to accelerate learning.
+
+\textbf{Data Collection.}
+From the trained expert policies, we collect 1 million transitions per level using 128 parallel environments.
+Only expert seeds with solve rate $\geq 65\%$ are used for data collection.
+The collected dataset includes the original observation (before history stacking), the executed action, and the episode termination signal.
+
+\textbf{Policy Architecture.}
+Both the flow-matching and discrete diffusion policies use an MLPMixer architecture with Adaptive Layer Normalization (AdaLN) conditioning.
+Each MLPMixerBlock consists of a token-mixing path (operating across the sequence dimension) and a channel-mixing path (operating across the feature dimension), both gated by AdaLN.
+Token mixing uses hidden dimension 64; channel mixing uses hidden dimension 512.
+The channel dimension is 256 and we stack 4 MLPMixerBlock layers.
+The action chunk size is $H=8$.
+The mixer operates on 8 tokens (one per timestep in the chunk).
+
+For the \textbf{flow-matching policy}, the input is the observation concatenated with the noised action chunk.
+A sinusoidal time embedding (min period $4\times 10^{-3}$, max period $4.0$) conditions the AdaLN layers.
+The output is a velocity vector of the same dimension as the action chunk.
+
+For the \textbf{discrete diffusion policy}, continuous actions are discretized into 512 bins via uniform quantization: $b = \lfloor (a + 1) / 2 \times 512 \rfloor$, with reconstruction at bin centers.
+The input is the observation concatenated with bin embeddings (embedding dimension 128) of the partially unmasked token sequence, where masked positions use a learnable \texttt{[MASK]} embedding (bin index 512).
+The token sequence is packed from $(H, \text{action\_dim}, \text{channel\_dim})$ to $(H, \text{channel\_dim})$ via a linear layer so that the mixer sees the same 8-token structure as the flow policy.
+A learned null conditioning vector (replacing the time embedding) is broadcast to all tokens.
+The output is logits over 512 bins for each action dimension at each timestep.
+
+\textbf{Training Recipe.}
+Both policies are trained for 32 epochs with batch size 512.
+We use AdamW with learning rate $3 \times 10^{-4}$ and weight decay $10^{-2}$.
+Gradients are clipped at global norm 10.0.
+
+For the \textbf{flow-matching policy}, we use a constant learning rate schedule with 1{,}000 warmup steps.
+The training loss is MSE on the predicted velocity field.
+
+For the \textbf{discrete diffusion policy}, we use a cosine decay schedule with 2{,}000 warmup steps and minimum learning rate $10^{-5}$.
+The training loss is cross-entropy on masked token positions, plus an auxiliary L1 loss (weight 0.1) in continuous action space.
+The training-time masking uses a cosine schedule: given a random time $t \sim \mathcal{U}[0, 1)$, the mask ratio is $1 - \cos(\pi t / 2)$.
+
+\textbf{Hyperparameters.}
+We summarize the key hyperparameters for both policies in Table~\ref{tab:hyperparams_sim}.
+
+\begin{table}[h]
+\centering
+\caption{Simulation experiment hyperparameters.}
+\label{tab:hyperparams_sim}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Hyperparameter} & \textbf{Flow-Matching} & \textbf{Discrete Diffusion} \\
+\midrule
+\multicolumn{3}{l}{\textit{Architecture}} \\
+Channel dimension & 256 & 256 \\
+Channel hidden dimension & 512 & 512 \\
+Token hidden dimension & 64 & 64 \\
+Number of MLPMixer layers & 4 & 4 \\
+Action chunk size ($H$) & 8 & 8 \\
+Number of bins & --- & 512 \\
+Bin embedding dimension & --- & 128 \\
+\midrule
+\multicolumn{3}{l}{\textit{Training}} \\
+Batch size & 512 & 512 \\
+Number of epochs & 32 & 32 \\
+Optimizer & AdamW & AdamW \\
+Learning rate & $3 \times 10^{-4}$ & $3 \times 10^{-4}$ \\
+Weight decay & $10^{-2}$ & $10^{-2}$ \\
+Gradient norm clip & 10.0 & 10.0 \\
+LR warmup steps & 1{,}000 & 2{,}000 \\
+LR schedule & Constant & Cosine decay \\
+Minimum LR & --- & $10^{-5}$ \\
+Training mask schedule & --- & Cosine \\
+L1 loss weight & --- & 0.1 \\
+\midrule
+\multicolumn{3}{l}{\textit{Evaluation}} \\
+Denoising / unmasking steps & 5 & 5 \\
+Decode mask schedule & --- & Cosine \\
+Choice temperature & --- & 0.0 (deterministic) \\
+Decode temperature & --- & 1.0 \\
+Early stopping (DiscreteRTC) & --- & True \\
+Inference delays ($d$) & \multicolumn{2}{c}{\{0, 1, 2, 3, 4\}} \\
+Execution horizon ($s$) & \multicolumn{2}{c}{$\max(1, d)$} \\
+Trials per configuration & \multicolumn{2}{c}{2{,}048} \\
+Action noise std & \multicolumn{2}{c}{0.1} \\
+\midrule
+\multicolumn{3}{l}{\textit{RTC-specific (Flow-Matching)}} \\
+Prefix attention schedule & \multicolumn{2}{c}{Exponential decay} \\
+Max guidance weight ($\beta$) & \multicolumn{2}{c}{5.0} \\
+\midrule
+\multicolumn{3}{l}{\textit{BID}} \\
+Number of samples & \multicolumn{2}{c}{16} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+%===============================================================================
+
+\section{Real-world Experiments Details}
+\textbf{Computation Recources.}
+
+\textbf{Data Collection Pipeline.}
+
+\textbf{Training Recipe.}
+
+\textbf{Evaluation Setup and the Inference Latency Analysis.}
+
+\textbf{Hyperparameters.}
+
+
+
+\end{document}
