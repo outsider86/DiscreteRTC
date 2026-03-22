@@ -1,0 +1,16 @@
+{
+  "channel_dim": 256,
+  "channel_hidden_dim": 512,
+  "token_hidden_dim": 64,
+  "num_layers": 4,
+  "action_chunk_size": 8,
+  "num_bins": 512,
+  "inpainting_mask": false,
+  "inpainting_d_schedule": "linear_decay",
+  "train_mask_schedule": "cosine",
+  "no_mask_token_prob": 0.0,
+  "decode_schedule": "cosine",
+  "choice_temperature": 1.0,
+  "use_remask": false,
+  "l1_loss_weight": 0.1
+}
