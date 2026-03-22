@@ -14,8 +14,6 @@ import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 
-import time
-
 from model import MLPMixerBlock, get_prefix_weights
 
 PrefixAttentionSchedule: TypeAlias = Literal["linear", "exp", "ones", "zeros"]
@@ -368,7 +366,6 @@ class DiscreteDiffusionPolicy(nnx.Module):
         adaptive_unmasking: if True, num_steps = num_steps * unknown_tokens_num / total_tokens_num.
         """
 
-        # start_time = time.time()
         deterministic = decode_temperature == 0
         deterministic_choice = choice_temperature == 0
         B = obs.shape[0]
@@ -385,7 +382,6 @@ class DiscreteDiffusionPolicy(nnx.Module):
         else:
             effective_num_steps = num_steps
         prefix_bins = continuous_to_bins(prev_action_chunk, self.num_bins)
-        # prefix_mask = jnp.arange(self.action_chunk_size)[None, :, None] < (self.action_chunk_size - execute_horizon) # Update, you should load all the previous actions and only execute the last execute_horizon actions are fully unmasked
         prefix_mask = jnp.arange(self.action_chunk_size)[None, :, None] < inference_delay
         cur_seqs = jnp.where(
             prefix_mask,
@@ -402,12 +398,9 @@ class DiscreteDiffusionPolicy(nnx.Module):
 
         def do_step(carry, step_idx):
             cur_seqs, rng_state, early_stopped = carry
-            # step_start_time = time.time()
             if _profile_callback is not None:
                 jax.debug.callback(_profile_callback, step_idx, "step_start")
             rng_state, cat_key, topk_key = jax.random.split(rng_state, 3)
-            # forward_time = time.time()
-            # print(f"forward_time: {forward_time - step_start_time}")
             logits = self(obs, cur_seqs)
             if _profile_callback is not None:
                 jax.debug.callback(_profile_callback, step_idx, "forward_done")
@@ -454,11 +447,8 @@ class DiscreteDiffusionPolicy(nnx.Module):
                 early_stopped = jnp.logical_or(early_stopped, all_unmasked)
             else:
                 early_stopped = jnp.array(False)
-            # decode_time = time.time()
-            # print(f"decode_time: {decode_time - forward_time}")
             if _profile_callback is not None:
                 jax.debug.callback(_profile_callback, step_idx, "decode_done")
-            # print(f"total_time: {time.time() - start_time}")
             return (next_seqs, rng_state, early_stopped), None
 
         def step(carry, step_idx):

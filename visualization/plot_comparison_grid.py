@@ -101,7 +101,7 @@ def _blend_with_gray(base_color: str, alpha: float) -> str:
 
 
 def combine_l1_complete(
-    input_dir: str | pathlib.Path = "/scratch/wangpc/rtc-ddvla-kinetix/eval_logs/l1_complete",
+    input_dir: str | pathlib.Path = "eval_logs/l1_complete",
     pattern: str = "results_worker*.csv",
     output_name: str = "results.csv",
 ) -> pathlib.Path:
