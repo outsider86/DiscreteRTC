@@ -4,16 +4,21 @@ import os
 if "EVAL_DD_GPU_ID" in os.environ:
     os.environ["CUDA_VISIBLE_DEVICES"] = os.environ["EVAL_DD_GPU_ID"]
 
+import collections
 import dataclasses
 import functools
 import json
 import math
 import pathlib
 import pickle
+import logging
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Sequence
+
+log = logging.getLogger(__name__)
 
 import flax.nnx as nnx
 import jax
@@ -71,6 +76,8 @@ class EvalConfig:
     step: int = -1
     weak_step: int | None = None
     num_evals: int = 2048
+    # num_evals: int = 256
+    # num_evals: int = 1
     num_flow_steps: int = 5
 
     inference_delay: int = 0
@@ -115,7 +122,166 @@ def _eval_config_to_dict(
     d["level_paths"] = level_paths
     d["seed"] = seed
     d["output_dir"] = output_dir
+    d["sweep"] = {
+        "inference_delays": [0, 1, 2, 3, 4],
+        "execute_horizon": "max(1, inference_delay)",
+        "methods": ["naive", "discrete_rtc", "adaptive_discrete_rtc", "bid", "vlash"],
+    }
     return d
+
+
+def _process_profile_events(
+    t_start: float,
+    t_end: float,
+    events: list[tuple[float, int, str]],
+    method_name: str,
+    num_steps: int,
+) -> None:
+    """Process (timestamp, step_idx, phase) events and log prepare / forward / decode breakdown."""
+    if not events:
+        return
+    events_sorted = sorted(events, key=lambda x: x[0])
+    prepare_s = events_sorted[0][0] - t_start
+    steps: dict[int, list[tuple[float, str]]] = {}
+    for t, step_idx, phase in events_sorted:
+        step_idx_int = int(step_idx)
+        if step_idx_int >= 0:
+            steps.setdefault(step_idx_int, []).append((t, phase))
+    forward_times: list[float] = []
+    decode_times: list[float] = []
+    for step_idx in sorted(steps.keys()):
+        step_events = sorted(steps[step_idx], key=lambda x: x[0])
+        if len(step_events) >= 3:
+            t_start_s, t_fwd, t_dec = step_events[0][0], step_events[1][0], step_events[2][0]
+            forward_times.append(t_fwd - t_start_s)
+            decode_times.append(t_dec - t_fwd)
+    overall_s = t_end - t_start
+    mean_fwd = sum(forward_times) / len(forward_times) if forward_times else 0.0
+    mean_dec = sum(decode_times) / len(decode_times) if decode_times else 0.0
+    log.info(
+        "[inference breakdown] method=%s | overall=%.4fs | prepare=%.4fs | per-step forward=%.4fs | per-step decode=%.4fs | num_steps=%d (overall is from one profiled run; prepare/forward/decode are host inter-callback intervals, not device time—do not sum to overall)",
+        method_name,
+        overall_s,
+        prepare_s,
+        mean_fwd,
+        mean_dec,
+        num_steps,
+    )
+
+
+def _benchmark_inference_s(
+    policy: _model_dd.DiscreteDiffusionPolicy,
+    config: EvalConfig,
+    obs_dim: int,
+    action_dim: int,
+    n_warmup: int = 3,
+    n_timed: int = 20,
+    profile_breakdown: bool = False,
+) -> float:
+    """Mean wall time (seconds) per action-chunk inference for the current config's method."""
+    rng = jax.random.key(0)
+    obs = jnp.zeros((config.num_evals, obs_dim))
+    action_chunk = jnp.zeros((config.num_evals, policy.action_chunk_size, action_dim))
+    prefix_h = policy.action_chunk_size - config.execute_horizon
+    ct, dt = config.choice_temperature, config.decode_temperature
+    method_name = type(config.method).__name__
+
+    def run_naive():
+        k, _ = jax.random.split(rng)
+        return policy.action(k, obs, config.num_flow_steps, choice_temperature=ct, decode_temperature=dt)
+
+    def run_realtime():
+        k, _ = jax.random.split(rng)
+        m = config.method
+        return policy.realtime_action(
+            k,
+            obs,
+            config.num_flow_steps,
+            action_chunk,
+            config.inference_delay,
+            config.execute_horizon,
+            m.early_stop,
+            adaptive_unmasking=m.adaptive_unmasking,
+            choice_temperature=ct,
+            decode_temperature=dt,
+        )
+
+    def run_bid():
+        k, _ = jax.random.split(rng)
+        return policy.bid_action(
+            k,
+            obs,
+            config.num_flow_steps,
+            action_chunk,
+            config.inference_delay,
+            prefix_h,
+            config.method.n_samples,
+            bid_weak_policy=None,
+            bid_k=None,
+            choice_temperature=ct,
+            decode_temperature=dt,
+        )
+
+    if isinstance(config.method, NaiveMethodConfig):
+        fn = run_naive
+        fn_with_profile = lambda cb: policy.action(
+            jax.random.key(0), obs, config.num_flow_steps,
+            choice_temperature=ct, decode_temperature=dt, _profile_callback=cb,
+        )
+    elif isinstance(config.method, (RealtimeMethodConfig, DiscreteRTCConfig, AdaptiveDiscreteRTCConfig)):
+        fn = run_realtime
+        m = config.method
+        fn_with_profile = lambda cb: policy.realtime_action(
+            jax.random.key(0), obs, config.num_flow_steps,
+            action_chunk, config.inference_delay, config.execute_horizon, m.early_stop,
+            adaptive_unmasking=m.adaptive_unmasking,
+            choice_temperature=ct, decode_temperature=dt, _profile_callback=cb,
+        )
+    elif isinstance(config.method, BIDMethodConfig):
+        fn = run_bid
+        fn_with_profile = None
+    elif isinstance(config.method, VlashMethodConfig):
+        # VLASH uses the same core action() kernel; treat as naive for timing.
+        fn = run_naive
+        fn_with_profile = lambda cb: policy.action(
+            jax.random.key(0),
+            obs,
+            config.num_flow_steps,
+            choice_temperature=ct,
+            decode_temperature=dt,
+            _profile_callback=cb,
+        )
+    else:
+        raise ValueError(type(config.method))
+
+    for _ in range(n_warmup):
+        jax.block_until_ready(fn())
+    start = time.perf_counter()
+    for _ in range(n_timed):
+        jax.block_until_ready(fn())
+    mean_s = (time.perf_counter() - start) / n_timed
+    log.info(
+        "Inference time: %.4f s per action chunk (num_evals=%d, method=%s, inference_delay=%d, execute_horizon=%d)",
+        mean_s,
+        config.num_evals,
+        method_name,
+        config.inference_delay,
+        config.execute_horizon,
+    )
+
+    if profile_breakdown and fn_with_profile is not None:
+        _profile_events: list[tuple[float, int, str]] = []
+
+        def _collect(step_idx: int, phase: str) -> None:
+            _profile_events.append((time.perf_counter(), int(step_idx), phase))
+
+        t0 = time.perf_counter()
+        out = fn_with_profile(_collect)
+        jax.block_until_ready(out)
+        t1 = time.perf_counter()
+        _process_profile_events(t0, t1, _profile_events, method_name, config.num_flow_steps)
+
+    return mean_s
 
 
 def eval(
@@ -313,6 +479,23 @@ def _append_row_to_csv(path: pathlib.Path, row: dict, write_header: bool) -> Non
     pd.DataFrame([row]).to_csv(path, mode=mode, header=write_header, index=False)
 
 
+def _write_inference_time_summary_txt(output_path: pathlib.Path, rows: list[dict]) -> None:
+    """Write mean inference time summary to inference_time_summary.txt."""
+    if not rows or "mean_inference_s" not in rows[0]:
+        return
+    df = pd.DataFrame(rows)
+    inference_df = df[["method", "delay", "execute_horizon", "mean_inference_s"]].drop_duplicates()
+    with (output_path / "inference_time_summary.txt").open("w") as f:
+        f.write("Mean inference time (s) per action chunk\n")
+        f.write("========================================\n")
+        for _, row in inference_df.sort_values(["method", "delay", "execute_horizon"]).iterrows():
+            f.write(
+                f"  method={row['method']}, delay={row['delay']}, execute_horizon={row['execute_horizon']}: "
+                f"{row['mean_inference_s']:.4f} s\n"
+            )
+        f.write(f"\nOverall mean: {df['mean_inference_s'].mean():.4f} s\n")
+
+
 def run_eval_chunk(
     run_path: str,
     config: EvalConfig,
@@ -346,11 +529,23 @@ def run_eval_chunk(
         0
     ].shape[-1]
     action_dim = env.action_space(env_params).shape[0]
+    action_chunk_size = config.model.action_chunk_size
 
     # Robot masks for VLASH
     robot_masks = jnp.stack(
         [compute_robot_indices.compute_robot_mask(p, obs_dim) for p in level_paths]
     )
+
+    # One policy for inference timing (same weights as first level)
+    benchmark_policy = _model_dd.DiscreteDiffusionPolicy(
+        obs_dim=obs_dim,
+        action_dim=action_dim,
+        config=config.model,
+        rngs=nnx.Rngs(jax.random.key(seed + 999)),
+    )
+    b_graphdef, b_state = nnx.split(benchmark_policy)
+    b_state.replace_by_pure_dict(state_dicts[0])
+    benchmark_policy = nnx.merge(b_graphdef, b_state)
 
     @functools.partial(jax.jit, static_argnums=(0,))
     def _eval_single(
@@ -403,80 +598,91 @@ def run_eval_chunk(
 
     rows: list[dict] = []
     for inference_delay in [0, 1, 2, 3, 4]:
-        execute_horizon = max(1, inference_delay)
-        print(f"{inference_delay=} {execute_horizon=}")
+    # for inference_delay in [2, 3, 4]:
+        execute_horizon_min = max(1, inference_delay)
+        # execute_horizon_min = action_chunk_size - inference_delay
+        # execute_horizon_max = action_chunk_size - inference_delay
+        execute_horizon_max = execute_horizon_min
+        for execute_horizon in range(execute_horizon_min, execute_horizon_max + 1):
+            print(f"{inference_delay=} {execute_horizon=}")
+            # Naive
+            # c = dataclasses.replace(
+            #     config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=NaiveMethodConfig()
+            # )
+            # mean_inference_s = _benchmark_inference_s(benchmark_policy, c, obs_dim, action_dim)
+            # out_list = run_config(c)
+            # for i in range(len(level_paths)):
+            #     row = {"delay": inference_delay, "method": "naive", "level": level_paths[i], "execute_horizon": execute_horizon, "mean_inference_s": mean_inference_s, **out_list[i]}
+            #     rows.append(row)
+            #     if results_path is not None:
+            #         _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
 
-        # Naive
-        c = dataclasses.replace(
-            config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=NaiveMethodConfig()
-        )
-        out_list = run_config(c)
-        for i in range(len(level_paths)):
-            row = {"delay": inference_delay, "method": "naive", "level": level_paths[i], "execute_horizon": execute_horizon, **out_list[i]}
-            rows.append(row)
-            if results_path is not None:
-                _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
+            # Discrete RTC
+            c = dataclasses.replace(
+                config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=DiscreteRTCConfig()
+            )
+            mean_inference_s = _benchmark_inference_s(benchmark_policy, c, obs_dim, action_dim)
+            out_list = run_config(c)
+            for i in range(len(level_paths)):
+                row = {"delay": inference_delay, "method": "discrete_rtc", "level": level_paths[i], "execute_horizon": execute_horizon, "mean_inference_s": mean_inference_s, **out_list[i]}
+                rows.append(row)
+                if results_path is not None:
+                    _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
 
-        # Discrete RTC
-        c = dataclasses.replace(
-            config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=DiscreteRTCConfig()
-        )
-        out_list = run_config(c)
-        for i in range(len(level_paths)):
-            row = {"delay": inference_delay, "method": "discrete_rtc", "level": level_paths[i], "execute_horizon": execute_horizon, **out_list[i]}
-            rows.append(row)
-            if results_path is not None:
-                _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
+            # Adaptive discrete RTC (adaptive_unmasking=True)
+            c = dataclasses.replace(
+                config,
+                inference_delay=inference_delay,
+                execute_horizon=execute_horizon,
+                method=AdaptiveDiscreteRTCConfig(),
+            )
+            mean_inference_s = _benchmark_inference_s(benchmark_policy, c, obs_dim, action_dim)
+            out_list = run_config(c)
+            for i in range(len(level_paths)):
+                row = {
+                    "delay": inference_delay,
+                    "method": "adaptive_discrete_rtc",
+                    "level": level_paths[i],
+                    "execute_horizon": execute_horizon,
+                    "mean_inference_s": mean_inference_s,
+                    **out_list[i],
+                }
+                rows.append(row)
+                if results_path is not None:
+                    _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
 
-        # Adaptive discrete RTC (adaptive_unmasking=True)
-        c = dataclasses.replace(
-            config,
-            inference_delay=inference_delay,
-            execute_horizon=execute_horizon,
-            method=AdaptiveDiscreteRTCConfig(),
-        )
-        out_list = run_config(c)
-        for i in range(len(level_paths)):
-            row = {
-                "delay": inference_delay,
-                "method": "adaptive_discrete_rtc",
-                "level": level_paths[i],
-                "execute_horizon": execute_horizon,
-                **out_list[i],
-            }
-            rows.append(row)
-            if results_path is not None:
-                _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
+            # BID
+            # c = dataclasses.replace(
+            #     config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=BIDMethodConfig()
+            # )
+            # mean_inference_s = _benchmark_inference_s(benchmark_policy, c, obs_dim, action_dim)
+            # out_list = run_config(c)
+            # for i in range(len(level_paths)):
+            #     row = {"delay": inference_delay, "method": "bid", "level": level_paths[i], "execute_horizon": execute_horizon, "mean_inference_s": mean_inference_s, **out_list[i]}
+            #     rows.append(row)
+            #     if results_path is not None:
+            #         _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
 
-        # BID
-        c = dataclasses.replace(
-            config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=BIDMethodConfig()
-        )
-        out_list = run_config(c)
-        for i in range(len(level_paths)):
-            row = {"delay": inference_delay, "method": "bid", "level": level_paths[i], "execute_horizon": execute_horizon, **out_list[i]}
-            rows.append(row)
-            if results_path is not None:
-                _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
-
-        # VLASH (future-state-aware chunk generation)
-        c = dataclasses.replace(
-            config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=VlashMethodConfig()
-        )
-        out_list = run_config(c)
-        for i in range(len(level_paths)):
-            row = {
-                "delay": inference_delay,
-                "method": "vlash",
-                "level": level_paths[i],
-                "execute_horizon": execute_horizon,
-                **out_list[i],
-            }
-            rows.append(row)
-            if results_path is not None:
-                _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
-
-        jax.clear_caches()
+            # VLASH (future-state-aware chunk generation)
+            # c = dataclasses.replace(
+            #     config, inference_delay=inference_delay, execute_horizon=execute_horizon, method=VlashMethodConfig()
+            # )
+            # mean_inference_s = _benchmark_inference_s(benchmark_policy, c, obs_dim, action_dim)
+            # out_list = run_config(c)
+            # for i in range(len(level_paths)):
+            #     row = {
+            #         "delay": inference_delay,
+            #         "method": "vlash",
+            #         "level": level_paths[i],
+            #         "execute_horizon": execute_horizon,
+            #         "mean_inference_s": mean_inference_s,
+            #         **out_list[i],
+            #     }
+            #     rows.append(row)
+            #     if results_path is not None:
+            #         _append_row_to_csv(results_path, row, write_header=(len(rows) == 1))
+            # Clear JAX compilation cache to avoid OOM from unbounded growth across (delay, horizon) configs
+            jax.clear_caches()
     return rows
 
 
@@ -502,6 +708,7 @@ def main(
     num_gpus: int = 0,
 ):
     """Run evaluation. Use num_gpus > 1 to distribute levels across GPUs via separate processes (avoids NCCL)."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     level_paths = list(level_paths)
     output_path = pathlib.Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -514,6 +721,7 @@ def main(
     if num_gpus <= 1:
         results_path = output_path / "results.csv"
         rows = run_eval_chunk(run_path, config, level_paths, seed, results_path=results_path)
+        _write_inference_time_summary_txt(output_path, rows)
     else:
         num_gpus = min(num_gpus, len(level_paths))
         print(f"Using {num_gpus} GPUs (one process per GPU)")
@@ -548,12 +756,15 @@ def main(
                 with out_path.open("rb") as f:
                     all_rows.extend(pickle.load(f))
         rows = all_rows
+        # Merge worker CSVs into results.csv (worker CSVs written on the fly; partial results preserved if main crashes)
         df = pd.DataFrame(rows)
         df.to_csv(output_path / "results.csv", index=False)
+        _write_inference_time_summary_txt(output_path, rows)
 
 
 if __name__ == "__main__":
     if len(sys.argv) >= 4 and sys.argv[1] == "worker":
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
         in_path, out_path = sys.argv[2], sys.argv[3]
         with open(in_path, "rb") as f:
             run_path, config, level_paths, seed, results_path_str = pickle.load(f)
