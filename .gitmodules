@@ -1,3 +1,0 @@
-[submodule "third_party/kinetix"]
-	path = third_party/kinetix
-	url = https://github.com/FlairOx/Kinetix.git
