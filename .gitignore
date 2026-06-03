@@ -1,7 +1,6 @@
-# Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,vim
-# Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,python,vim
-
-### Python ###
+debug/
+ckpts/
+third_party/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -24,6 +23,8 @@ parts/
 sdist/
 var/
 wheels/
+third_party/
+pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -53,7 +54,6 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-cover/
 
 # Translations
 *.mo
@@ -76,7 +76,6 @@ instance/
 docs/_build/
 
 # PyBuilder
-.pybuilder/
 target/
 
 # Jupyter Notebook
@@ -87,9 +86,7 @@ profile_default/
 ipython_config.py
 
 # pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+.python-version
 
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
@@ -98,22 +95,7 @@ ipython_config.py
 #   install all needed dependencies.
 #Pipfile.lock
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/#use-with-ide
-.pdm.toml
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
 __pypackages__/
 
 # Celery stuff
@@ -150,88 +132,134 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-### Python Patch ###
-# Poetry local configuration file - https://python-poetry.org/docs/configuration/#local-configuration
-poetry.toml
-
-# ruff
+# Ruff
 .ruff_cache/
 
-# LSP config files
-pyrightconfig.json
+# Auth Tokens / Hidden Files
+.hf_token
+.wandb_api_key
+.*_token
+.*api_key
 
-### Vim ###
-# Swap
-[._]*.s[a-v][a-z]
-!*.svg  # comment out if you don't need vector files
-[._]*.sw[a-p]
-[._]s[a-rt-v][a-z]
-[._]ss[a-gi-z]
-[._]sw[a-p]
+# IDE Caches
+.idea/
+.vscode/
 
-# Session
-Session.vim
-Sessionx.vim
+# Mac OS
+.DS_Store
 
-# Temporary
-.netrwhist
-*~
-# Auto-generated tag files
-tags
-# Persistent undo
-[._]*.un~
+# Caches and Datasets
+cache/
+data/
+playground/Models
+=4.43.2
 
-### VisualStudioCode ###
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
+# temp
+playground/BuildData
 
-# Local History for Visual Studio Code
-.history/
+playground/Checkpoints
+playground/Pretrained_models
+playground/Datasets
 
-# Built Visual Studio Code Extensions
-*.vsix
+eval/SimplerEnv
 
-### VisualStudioCode Patch ###
-# Ignore all local history of files
-.history
-.ionide
+results
+nohup.out
+*.out
+length_distribution.png
+eval/MMBench/*.jpg
+eval/*/*.jpg
+eval/*/*.png
+eval/**/*.ipynb
+# scripts
+# scripts
+bar
+eval/MMBench/*.jpeg
+eval/MMBench/play_ground_bbox.ipynb
+eval/MMBench/spatial_understanding.ipynb
+llavavla/conf/qwenvla_lmdb_genmanip.yaml
+annotated_image.png
+data_processed
+llavavla/conf/qwenvla_lmdb_3Lpretrain.yaml
+extracted_frames
+starVLA/config/deepseeds/*
+**/bar
+llavavla/model/openvla_temp
+real_deployment/upload/push_model_to_hf.py
+real_deployment/deploy/*bar
+**/*.mp4
+# but allow demo video data
+!playground/demo_data/**/*.mp4
+!playground/demo_data/**/data/
+!playground/demo_data/**/*.parquet
+experiments/libero/logs/2025-08-10/17-18-26+checkpoints_steps_60000_pytorch_model.pt_s1-8_s2-16_s2cand-5_ntl-1.0_ntu-1.0_ttl-0.9_ttu-1.0/rollout_put_the_bowl_on_top_of_the_cabinet_failure.mp4
 
-# End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,python,vim
+**/*.log
 
-wandb/
-rtc-assets/
-train_logs/
-eval_logs/
-eval_output/
-paper/
-# Training and evaluation logs
-logs-dd/
-logs-expert/
-logs-bc/
-logs-dd-finetune/
-logs-vlash-dd/
-logs-dd-self-forcing/
+**/*.jpg
+debug_images/step1_raw.npy
+test_image.jpg
+test_image.jpg.npy
+test_image.jpg
+# scripts/*
 
-visualization/
-docs/
-src/eval_vlash_dd.py
-src/train_vlash_dd.py
-src/compute_robot_indices.py
-src/finetune_dd_self_forcing.py
+scripts/run_scripts/sum2cluter.sh
+
+examples/SimplerEnv/eval_scripts
+
+starVLA/config/frameworks/*
+starVLA/model/modules/sam_model/*
+assets/SAMv2.txt
+playground/*
+qwen_talk.md
+assets/R1Pro.py
+examples/SPVLA
+examples/SimplerEnv/eval_files/eval_scripts
+examples/Robotwin/train_files/submit_robotwin_training.sh
+starVLA/dataloader/gr00t_lerobot/datasets_temp.py
+MUJOCO_LOG.TXT
+examples/MultiRobot/*
+
+AGENTS.md
+
+temp
+temp/*
+
+tmp
+
+wandb/*
+
+**/*.pt
+**/*.mp4
+**/*.npy
+**/*.parquet
+
+*/**/*.md
+*/*.md
+!examples/**/README.md
+
+# Whitelist specific docs that should be tracked
+!.github/PULL_REQUEST_TEMPLATE.md
+!docs/branching_strategy.md
+!docs/PR_readme.md
+!docs/CONTRIBUTING.md
+!docs/faq.md
+!docs/model_zoo.md
+!docs/starVLA_guideline.md
+!docs/WM4A.md
+
+
+logs/*
+bar
+**/.nf*
+code
+examples/RoboChallenge_table30v2/*
+examples/LIBERO/eval_files/auto_eval_scripts/run_all_libero_untested.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/summarize_widowx_all.sh
+examples/SimplerEnv/eval_files/auto_eval_scripts/auto_collect_results/schedule_widowx_eval.sh
+starVLA/model/framework/VLM4A/QwenGR00T_v2.py
