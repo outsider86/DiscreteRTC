@@ -19,7 +19,7 @@ This branch holds the **real-world** side of DiscreteRTC (UR5e dynamic manipulat
 
 ## 1. Built upon StarVLA
 
-The real-world DiscreteRTC policy is a **VLA framework on top of [StarVLA](https://github.com/starVLA/starVLA)** — a modular ("Lego-like") codebase where the VLM backbone, action head, dataloader, trainer, and deployment hooks are decoupled, so a new method typically reduces to swapping the action head while reusing the rest.
+The real-world DiscreteRTC policy is **on top of [StarVLA](https://github.com/starVLA/starVLA)** — a modular ("Lego-like") codebase where the VLM backbone, action head, dataloader, trainer, and deployment hooks are decoupled, so a new method typically reduces to swapping the action head while reusing the rest.
 
 DiscreteRTC was upstreamed into StarVLA in **[PR #343 — `QwenDiscreteDiffusion` + RTC `predict_action_realtime`](https://github.com/starVLA/starVLA/pull/343)**, and we actively maintain the method there. The relevant files (included in this branch):
 
@@ -62,32 +62,14 @@ accelerate launch \
   --framework.name QwenDiscreteDiffusion \
   --framework.qwenvl.base_vlm playground/Pretrained_models/Qwen2.5-VL-3B-Instruct-Action \
   --framework.qwenvl.attn_implementation flash_attention_2 \
-  --datasets.vla_data.data_root_dir playground/Datasets/FastUMI \
-  --datasets.vla_data.data_mix fastumi_pickandplace_real_0307 \
+  --datasets.vla_data.data_root_dir <datasets_name> \
+  --datasets.vla_data.data_mix fastumi_<task_name> \
   --datasets.vla_data.per_device_batch_size 8 \
   --trainer.max_train_steps 30000 \
   --trainer.save_interval 5000 \
   --run_id qwendd_fastumi_real
 ```
 
-**Sim / RoboTwin** (14D dual-arm) swaps in [`starvla_train_discrete_diffusion.yaml`](starVLA/config/training/starvla_train_discrete_diffusion.yaml):
-
-```bash
-accelerate launch \
-  --config_file starVLA/config/deepseeds/deepspeed_zero2.yaml \
-  --num_processes 8 \
-  starVLA/training/train_starvla.py \
-  --config_yaml starVLA/config/training/starvla_train_discrete_diffusion.yaml \
-  --framework.name QwenDiscreteDiffusion \
-  --framework.qwenvl.base_vlm playground/Pretrained_models/Qwen2.5-VL-3B-Instruct \
-  --framework.qwenvl.attn_implementation flash_attention_2 \
-  --datasets.vla_data.data_root_dir playground/Datasets/RoboTwin \
-  --datasets.vla_data.data_mix robotwin \
-  --datasets.vla_data.per_device_batch_size 16 \
-  --trainer.max_train_steps 100000 \
-  --trainer.save_interval 5000 \
-  --run_id qwendd_robotwin
-```
 
 Any YAML key can be overridden from the CLI with `--<group>.<subgroup>.<key> <value>`. See [`examples/modelExtensions/DiscreteDiffusion/README.md`](examples/modelExtensions/DiscreteDiffusion/README.md) for the full set of discrete-diffusion options and the in-process inference / RTC API.
 
