@@ -48,7 +48,7 @@ This repository is organized into **three branches**:
 
 ## ⭐ Use and extend DiscreteRTC in StarVLA
 
-DiscreteRTC is **intentionally lightweight** — the core method is essentially *a call*, not a heavy framework. The per-branch code here reproduces the paper's experiments, but if you want to **build on, extend, or apply DiscreteRTC**, we strongly encourage you to use our actively maintained implementation in **StarVLA**, where we keep it up to date:
+DiscreteRTC is **intentionally lightweight** — the core method is essentially *a call*, not a heavy framework. The kinetix-branch code here reproduces the paper's experiments, but if you want to **build on, extend, or apply DiscreteRTC for real-world experiments with VLA**, we strongly encourage you to use our actively maintained implementation in **StarVLA**, where we keep it up to date:
 
 ### 👉 https://github.com/starVLA/starVLA
 
