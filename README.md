@@ -15,11 +15,11 @@
 </div>
 
 <p align="center">
-  <a href="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4">
-    <img src="assets/cover.png" alt="DiscreteRTC overview — click to play the video." width="85%">
+  <a href="https://outsider86.github.io/DiscreteRTCSite/">
+    <img src="assets/cover.png" alt="DiscreteRTC overview." width="85%">
   </a>
 </p>
-<p align="center"><a href="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4">▶ Click to play the overview video</a> · <a href="https://outsider86.github.io/DiscreteRTCSite/">watch on the project page</a></p>
+<p align="center"><a href="https://outsider86.github.io/DiscreteRTCSite/">▶ Watch the overview video on the project page</a></p>
 
 
 
