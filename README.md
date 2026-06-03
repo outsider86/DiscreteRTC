@@ -15,8 +15,11 @@
 </div>
 
 <p align="center">
-  <video src="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4" controls autoplay muted loop width="85%"></video>
+  <a href="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4">
+    <img src="assets/cover.png" alt="DiscreteRTC overview — click to play the video." width="85%">
+  </a>
 </p>
+<p align="center"><a href="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4">▶ Click to play the overview video</a> · <a href="https://outsider86.github.io/DiscreteRTCSite/">watch on the project page</a></p>
 
 
 
@@ -26,7 +29,7 @@
 
 RTC was designed for flow-matching action heads, yet RTC with a flow-matching head has four critical limitations, all from one root cause: *the inpainting capability comes from inference-time correction (e.g., ΠGDM), not the base policy.*
 
-| | Flow-matching RTC (limitation) | Discrete diffusion (resolved) |
+| | Flow-matching RTC | Discrete Diffusion RTC |
 |---|---|---|
 | **a** | Pre-training without inpainting | Inpainting *is* the pre-training task |
 | **b** | Dedicated fine-tuning required (Training-time RTC) | Fine-tuning free |
