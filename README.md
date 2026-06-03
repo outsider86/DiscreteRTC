@@ -2,6 +2,8 @@
 
 # DiscreteRTC: Discrete Diffusion Policies are Natural Asynchronous Executors
 
+**Official implementation of DiscreteRTC** · [🌐 Project Page](https://outsider86.github.io/DiscreteRTCSite/)
+
 **Pengcheng Wang**<sup>1</sup> · **Kaiwen Hong**<sup>2</sup> · **Chensheng Peng**<sup>1</sup> · **Katherine Driggs-Campbell**<sup>2</sup> · **Masayoshi Tomizuka**<sup>1</sup> · **Chenfeng Xu**<sup>3</sup> · **Chen Tang**<sup>4</sup>
 
 <sup>1</sup>UC Berkeley · <sup>2</sup>UIUC · <sup>3</sup>UT Austin · <sup>4</sup>UCLA
@@ -15,10 +17,13 @@
 </div>
 
 <p align="center">
-  <video src="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4" controls autoplay muted loop width="85%"></video>
+  <a href="https://outsider86.github.io/DiscreteRTCSite/">
+    <img src="assets/cover.png" alt="DiscreteRTC overview." width="85%">
+  </a>
 </p>
+<p align="center"><b><a href="https://outsider86.github.io/DiscreteRTCSite/">▶ Watch the overview video & explore interactive results on the project page</a></b></p>
 
-
+This repository is the **official implementation of DiscreteRTC** — *Discrete Diffusion Policies are Natural Asynchronous Executors*. It hosts the simulation pipeline, real-world experiment infrastructure, and reproduction assets across three branches (see the [Repository guide](#repository-guide) below). For the paper, full videos, and interactive results, visit the [project page](https://outsider86.github.io/DiscreteRTCSite/).
 
 ---
 
