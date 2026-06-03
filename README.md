@@ -15,11 +15,8 @@
 </div>
 
 <p align="center">
-  <a href="https://outsider86.github.io/DiscreteRTCSite/">
-    <img src="assets/cover.png" alt="DiscreteRTC overview." width="85%">
-  </a>
+  <video src="https://github.com/outsider86/DiscreteRTC/raw/main/assets/overview.mp4" controls autoplay muted loop width="85%"></video>
 </p>
-<p align="center"><a href="https://outsider86.github.io/DiscreteRTCSite/">▶ Watch the overview video on the project page</a></p>
 
 
 
@@ -43,7 +40,7 @@ This repository is organized into **three branches**:
 
 | Branch | Purpose |
 |---|---|
-| **`main`** *(here)* | Project overview, key result plots, and guidance to the other branches. |
+| **`main`** (here) | Project overview, key result plots, and guidance to the other branches. |
 | [**`kinetix`**](https://github.com/outsider86/DiscreteRTC/tree/kinetix) | **Simulation pipeline.** Full Kinetix reproduction code — expert training, data generation, discrete diffusion / flow policy training, and evaluation across inference delays. |
 | [**`real`**](https://github.com/outsider86/DiscreteRTC/tree/real) | **Real-world experiments infrastructure** for the UR5e dynamic manipulation tasks. |
 
@@ -51,9 +48,7 @@ This repository is organized into **three branches**:
 
 ## ⭐ Use and extend DiscreteRTC in StarVLA
 
-DiscreteRTC is **intentionally lightweight** — the core method is essentially *a call*, not a heavy framework. The kinetix-branch code here reproduces the paper's experiments, but if you want to **build on, extend, or apply DiscreteRTC for real-world experiments with VLA**, we strongly encourage you to use our actively maintained implementation in **StarVLA**, where we keep it up to date:
-
-### 👉 https://github.com/starVLA/starVLA
+DiscreteRTC is **intentionally lightweight** — the core method is essentially *a call*, not a heavy framework. The kinetix-branch code here reproduces the paper's experiments, but if you want to **build on, extend, or apply DiscreteRTC for real-world experiments with VLA**, we strongly encourage you to use our actively maintained implementation in **StarVLA**, where we keep it up to date👉 https://github.com/starVLA/starVLA
 
 ---
 
